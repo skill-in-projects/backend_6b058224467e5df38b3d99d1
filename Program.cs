@@ -5,6 +5,18 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+// Clinic booking: the rules (appsettings "Clinic" section), the clock (TimeProvider, so tests can fix "now") and the stores
+var clinicOptions = builder.Configuration.GetSection("Clinic").Get<Backend.Domain.ClinicOptions>() ?? new Backend.Domain.ClinicOptions();
+clinicOptions.TimeZone(); // fail at startup, not on the first booking, if the time zone id is wrong
+builder.Services.AddSingleton(clinicOptions);
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<Backend.Services.Database>();
+builder.Services.AddSingleton<Backend.Services.CatalogStore>();
+builder.Services.AddSingleton<Backend.Services.ScheduleStore>();
+builder.Services.AddSingleton<Backend.Services.AppointmentStore>();
+builder.Services.AddSingleton<Backend.Services.AvailabilityService>();
+builder.Services.AddSingleton<Backend.Services.AppointmentView>();
+
 // CORS configuration - Allow GitHub Pages and all origins
 builder.Services.AddCors(options =>
 {
@@ -122,12 +134,22 @@ app.MapControllers();
 
 // Add a simple root route to verify the service is running
 app.MapGet("/", () => new { 
-    message = "Backend API is running", 
+    message = "Clinic booking API is running",
     status = "ok",
     swagger = "/swagger",
     api = "/api/test",
     googleApi = "/api/google/status"
 });
+
+// Create the clinic tables and the sample clinic (skipped when they already exist)
+try
+{
+    await Backend.Services.ClinicSchema.EnsureAsync(app.Services.GetRequiredService<Backend.Services.Database>());
+}
+catch (Exception schemaEx)
+{
+    app.Logger.LogError(schemaEx, "Could not set up the clinic tables: {Message}", schemaEx.Message);
+}
 
 try
 {
