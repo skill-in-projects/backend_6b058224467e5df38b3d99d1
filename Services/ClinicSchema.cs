@@ -71,6 +71,10 @@ public static class ClinicSchema
             CHECK (ends_at > starts_at AND blocked_until >= ends_at)
         );
 
+        -- Last line of defence against a double booking: two live appointments cannot start at the same moment for the
+        -- same practitioner. Partial overlaps are stopped by the per-practitioner lock in AppointmentStore.
+        CREATE UNIQUE INDEX IF NOT EXISTS appointments_one_live_start
+            ON appointments (practitioner_id, starts_at) WHERE status = 'booked';
         CREATE INDEX IF NOT EXISTS appointments_by_practitioner_time ON appointments (practitioner_id, starts_at);
         CREATE INDEX IF NOT EXISTS time_off_by_practitioner_time ON time_off (practitioner_id, starts_at);
         """;

@@ -48,6 +48,7 @@ public sealed class AppointmentStore
     {
         await using var conn = await _db.OpenAsync(ct);
         await using var tx = await conn.BeginTransactionAsync(ct);
+        await LockPractitionerAsync(conn, tx, practitionerId, ct);
         if (!await StillFreeAsync(conn, tx, service, practitionerId, startsAt, hours, null, ct)) return BookingOutcome.Taken;
 
         var token = ManageToken.Create();
