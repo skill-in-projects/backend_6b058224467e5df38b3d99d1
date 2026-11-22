@@ -39,4 +39,50 @@ public sealed class ScheduleStore
         await using var conn = await _db.OpenAsync(ct);
         return await BusyAsync(conn, null, practitionerId, range, null, ct);
     }
+
+    public async Task<IReadOnlyList<TimeOff>> TimeOffAsync(TimeRange range, CancellationToken ct)
+    {
+        await using var conn = await _db.OpenAsync(ct);
+        await using var cmd = new NpgsqlCommand(
+            "SELECT id, practitioner_id, starts_at, ends_at, reason FROM time_off WHERE starts_at < @to AND ends_at > @from ORDER BY starts_at", conn);
+        cmd.Parameters.AddWithValue("from", range.Start);
+        cmd.Parameters.AddWithValue("to", range.End);
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        var list = new List<TimeOff>();
+        while (await reader.ReadAsync(ct))
+            list.Add(new TimeOff(reader.GetInt32(0), reader.GetInt32(1), reader.GetDateTime(2), reader.GetDateTime(3), reader.IsDBNull(4) ? null : reader.GetString(4)));
+        return list;
+    }
+
+    /// <summary>
+    /// Adds time off unless it clashes with booked appointments. Clashes are returned, not cancelled: staff call those
+    /// patients first, then cancel them from the day view, then add the time off.
+    /// </summary>
+    public async Task<(TimeOff? Added, IReadOnlyList<Appointment> Clashes)> AddTimeOffAsync(int practitionerId, TimeRange range, string? reason, CancellationToken ct)
+    {
+        await using var conn = await _db.OpenAsync(ct);
+        await using var tx = await conn.BeginTransactionAsync(ct);
+        await AppointmentStore.LockPractitionerAsync(conn, tx, practitionerId, ct);
+
+        var clashes = await AppointmentStore.BookedInRangeAsync(conn, tx, practitionerId, range, ct);
+        if (clashes.Count > 0) return (null, clashes);
+
+        await using var cmd = new NpgsqlCommand(
+            "INSERT INTO time_off (practitioner_id, starts_at, ends_at, reason) VALUES (@p, @from, @to, @reason) RETURNING id", conn, tx);
+        cmd.Parameters.AddWithValue("p", practitionerId);
+        cmd.Parameters.AddWithValue("from", range.Start);
+        cmd.Parameters.AddWithValue("to", range.End);
+        cmd.Parameters.Add(new NpgsqlParameter<string?>("reason", reason));
+        var id = (int)(await cmd.ExecuteScalarAsync(ct))!;
+        await tx.CommitAsync(ct);
+        return (new TimeOff(id, practitionerId, range.Start, range.End, reason), Array.Empty<Appointment>());
+    }
+
+    public async Task<bool> DeleteTimeOffAsync(int id, CancellationToken ct)
+    {
+        await using var conn = await _db.OpenAsync(ct);
+        await using var cmd = new NpgsqlCommand("DELETE FROM time_off WHERE id = @id", conn);
+        cmd.Parameters.AddWithValue("id", id);
+        return await cmd.ExecuteNonQueryAsync(ct) == 1;
+    }
 }

@@ -65,4 +65,30 @@ public class StaffController : ControllerBase
         if (updated is null) return this.Error(new ApiError("not_active", "Someone changed this appointment a moment ago. Reload the day."));
         return Ok(new { updated.Id, updated.Status });
     }
+
+    [HttpPost("time-off")]
+    public async Task<IActionResult> AddTimeOff([FromBody] TimeOffRequest request, CancellationToken ct)
+    {
+        if (await _catalog.PractitionerAsync(request.PractitionerId, ct) is null)
+            return this.Error(new ApiError("no_practitioner", "That practitioner does not exist."));
+        if (request.To <= request.From)
+            return BadRequest(new ApiError("bad_range", "The end time must be after the start time."));
+
+        var zone = _options.TimeZone();
+        var from = ClinicClock.ToUtc(request.Day, request.From, zone);
+        var to = ClinicClock.ToUtc(request.Day, request.To, zone);
+        if (from is null || to is null) return BadRequest(new ApiError("bad_time", "That time does not exist on this day (the clocks change)."));
+
+        var (added, clashes) = await _schedule.AddTimeOffAsync(request.PractitionerId, new TimeRange(from.Value, to.Value), request.Reason?.Trim(), ct);
+        if (added is null)
+        {
+            var list = string.Join(", ", clashes.Select(c => $"{ClinicClock.ToLocal(c.StartsAt, zone):HH:mm} {c.PatientName}"));
+            return this.Error(new ApiError("time_off_clash", $"These appointments are booked in that time: {list}. Contact the patients and cancel them first."));
+        }
+        return Ok(added);
+    }
+
+    [HttpDelete("time-off/{id:int}")]
+    public async Task<IActionResult> DeleteTimeOff(int id, CancellationToken ct) =>
+        await _schedule.DeleteTimeOffAsync(id, ct) ? NoContent() : NotFound(new ApiError("no_time_off", "That time off does not exist."));
 }
