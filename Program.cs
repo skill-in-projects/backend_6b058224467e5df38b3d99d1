@@ -128,6 +128,7 @@ app.UseSwaggerUI();
 
 // CORS must be early in the pipeline, before Authorization
 app.UseCors("AllowAll");
+app.UseMiddleware<Backend.Middleware.DatabaseRestingMiddleware>();
 
 app.UseAuthorization();
 app.MapControllers();

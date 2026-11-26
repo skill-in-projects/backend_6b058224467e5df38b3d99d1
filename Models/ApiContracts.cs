@@ -49,3 +49,11 @@ public sealed record StaffTimeOffDto(int Id, string From, string To, string? Rea
 public sealed record StaffColumnDto(int PractitionerId, string PractitionerName, IReadOnlyList<StaffAppointmentDto> Appointments, IReadOnlyList<StaffTimeOffDto> TimeOff);
 
 public sealed record StaffDayDto(DateOnly Date, IReadOnlyList<StaffColumnDto> Practitioners);
+
+public sealed record DayMinutesDto(DateOnly Date, int Minutes, int Visits);
+
+public sealed record NamedMinutesDto(string Name, int Minutes, int Visits);
+
+public sealed record MinutesDashboardDto(
+    DateOnly From, DateOnly To, int TotalMinutes, int Visits, int CancelledVisits,
+    IReadOnlyList<DayMinutesDto> Days, IReadOnlyList<NamedMinutesDto> Practitioners, IReadOnlyList<NamedMinutesDto> Services);
